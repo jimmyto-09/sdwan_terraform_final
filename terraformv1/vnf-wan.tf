@@ -1,5 +1,3 @@
-# wan.tf – VNF WAN manifest (sin volumen de flujos JSON)
-
 resource "kubernetes_pod" "vnf_wan" {
   for_each = local.vnf_wan_instances
 
@@ -20,11 +18,10 @@ resource "kubernetes_pod" "vnf_wan" {
   }
 
   spec {
+    # Contenedor principal: VNF WAN
     container {
       name  = "vnf-wan"
       image = "educaredes/vnf-wan"
-
-      # Se eliminó volume_mount porque las reglas SDN ya no se leen dentro del Pod
 
       command = [
         "/bin/sh",
@@ -37,113 +34,96 @@ resource "kubernetes_pod" "vnf_wan" {
             sleep 1
           done
 
-          # Esperar IP del servicio vnf-access
           while true; do
             ACCESS_IP=$(getent hosts vnf-access-${each.key}-service | awk '{print $1}')
-            if [ -n "$ACCESS_IP" ]; then break; fi
+            if [ ! -z "$ACCESS_IP" ]; then break; fi
             echo "⏳ Esperando IP de vnf-access-${each.key}..."
             sleep 2
           done
 
-          SELF_IP=$(hostname -i)
-          echo "🌐 IP local (wan): $SELF_IP"
+          WAN_IP=$(hostname -i)
+          echo "🌐 IP local (wan): $WAN_IP"
           echo "🎯 IP remota (access): $ACCESS_IP"
 
           ip link del axswan 2>/dev/null || true
 
-          ####################################################
-          ####################### BRWAN ######################
-          ####################################################
-          # Esperar IP del CPE
+          # Configuración BRWAN
           while true; do
-            CPE_IP=$(getent hosts ${each.value.cpe_service_name} | awk '{ print $1 }')
-            if [ -n "$CPE_IP" ]; then break; fi
+            CPE_IP=$(getent hosts ${each.value.cpe_service_name} | awk '{print $1}')
+            if [ ! -z "$CPE_IP" ]; then break; fi
             echo "⏳ Esperando IP de vnf-cpe..."
             sleep 2
           done
 
           ovs-vsctl add-br brwan
 
-          #Crear túnel VXLAN ID 3 hacia vnf:access 
           ip link add axswan type vxlan id 3 remote $ACCESS_IP dstport 4788 dev eth0
           ovs-vsctl add-port brwan axswan
           ovs-vsctl add-port brwan net1
-
           ip link set axswan up
           ip route del $ACCESS_IP via 169.254.1.1 dev eth0 2>/dev/null || true
           ip route add $ACCESS_IP via 169.254.1.1 dev eth0
 
           ip link del cpewan 2>/dev/null || true
-
-          #Crear túnel VXLAN ID 5 hacia vnf:cpe 
           ip link add cpewan type vxlan id 5 remote $CPE_IP dstport 8741 dev eth0
           ovs-vsctl add-port brwan cpewan
           ifconfig cpewan up
 
-          #####################
-          ####### RYU ########
-          #####################
-
-          ryu-manager /root/flowmanager/flowmanager.py ryu.app.ofctl_rest > /ryu.log 2>&1 &
+          # Conectar bridge a controlador Ryu
+          while true; do
+            RYU_IP=$(getent hosts knf-ctrl-${each.key}-svc | awk '{print $1}')
+            if [ -n "$RYU_IP" ]; then
+              echo "🔗 Ryu controller IP: $RYU_IP"
+              break
+            fi
+            echo "⏳ Esperando IP de controller…"
+            sleep 2
+          done
 
           ovs-vsctl set bridge brwan protocols=OpenFlow10,OpenFlow12,OpenFlow13
           ovs-vsctl set-fail-mode brwan secure
           ovs-vsctl set bridge brwan other-config:datapath-id=0000000000000001
-          ovs-vsctl set-controller brwan tcp:127.0.0.1:6633
+          ovs-vsctl set-controller brwan tcp:$RYU_IP:6633
+          ovs-vsctl set-manager ptcp:6632
 
-          # Esperar a que el datapath aparezca en la API REST
-          until curl -s http://127.0.0.1:8080/stats/switches | grep -q "\\[1\\]"; do
-            sleep 1
-          done
-
-          echo "📡 Datapath activo. Carga las reglas SDN externamente con apply_flows.sh"
-
-          # Mantener el contenedor vivo
           sleep infinity
         EOT
       ]
 
       security_context {
         privileged = true
-        capabilities {
-          add = ["NET_ADMIN", "SYS_ADMIN"]
+        capabilities { add = ["NET_ADMIN", "SYS_ADMIN"] }
+      }
+    }
+
+    # Sidecar: metrics exporter
+    container {
+      name  = "node-exporter"
+      image = "quay.io/prometheus/node-exporter:latest"
+
+      port {
+        name           = "metrics"
+        container_port = 9100
+      }
+
+      resources {
+        limits = {
+          cpu    = "100m"
+          memory = "64Mi"
+        }
+        requests = {
+          cpu    = "50m"
+          memory = "32Mi"
         }
       }
     }
-  }
-}
 
-#########################################################################
-#  Servicio NodePort API_REST
-#########################################################################
-resource "kubernetes_service" "vnf_wan" {
-  for_each = local.vnf_wan_instances
-
-  metadata {
-    name      = "vnf-wan-${each.key}-service"
-    namespace = "rdsv"
-  }
-
-  spec {
-    type = "NodePort"
-    selector = {
-      "k8s-app" = "vnf-wan-${each.key}"
-    }
-
-    # API REST de Ryu (8080)
-    port {
-      name        = "ryu-rest"
-      protocol    = "TCP"
-      port        = 8080
-      target_port = 8080
-      node_port   = each.key == "site1" ? 31880 : 31881
+   
     }
   }
-}
 
-#########################################################################
-#  Servicio headless → expone la IP real del Pod WAN
-#########################################################################
+
+# Servicio headless para exponer IP real del Pod WAN
 resource "kubernetes_service" "vnf_wan_pod" {
   for_each = local.vnf_wan_instances
 
@@ -154,6 +134,8 @@ resource "kubernetes_service" "vnf_wan_pod" {
 
   spec {
     cluster_ip = "None"
-    selector   = { "k8s-app" = "vnf-wan-${each.key}" }
+    selector   = {
+      "k8s-app" = "vnf-wan-${each.key}"
+    }
   }
 }

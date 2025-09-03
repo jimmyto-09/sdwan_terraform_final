@@ -18,3 +18,4 @@ vnf_sites = {
     remotesite = "10.100.1.1"
   }
 }
+
