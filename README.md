@@ -66,7 +66,7 @@ La siguiente imágen muestra los distintos servicios configurados dentro de cada
 5. **Aplicar las reglas y qos**
 
     ```bash
-   chmod +x reglas.sh
+   chmod +x apply_flow.sh
    ./apply_flow.sh
    chmod +x qos.sh
    ./qos.sh
