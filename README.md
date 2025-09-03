@@ -67,7 +67,7 @@ La siguiente imágen muestra los distintos servicios configurados dentro de cada
 
     ```bash
    chmod +x reglas.sh
-   ./reglas.sh
+   ./apply_flow.sh
    chmod +x qos.sh
    ./qos.sh
     ```
