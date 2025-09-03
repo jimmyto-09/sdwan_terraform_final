@@ -1,0 +1,43 @@
+{
+    "cSpell.enableFiletypes": [
+        "markdown"
+    ],
+    "cSpell.language": "en-GB, es-ES",
+    "cSpell.ignoreWords": [
+        "ACCPOD",
+        "CPEPOD",
+        "NSID",
+        "SDWNS",
+        "accesschart",
+        "accessknf",
+        "cpechart",
+        "cpeknf",
+        "helmchartrepo",
+        "microk",
+        "vcpe",
+        "vnfd",
+        "xhost"
+    ],
+    "markdown.marp.themes": [
+        "doc/theme.css"
+    ],
+    "cSpell.words": [
+        "brwan",
+        "corpcpe",
+        "extnet",
+        "labserver",
+        "labtun",
+        "Mpls",
+        "mplswan",
+        "pingchart",
+        "pingknf",
+        "pingpong",
+        "pongchart",
+        "pongknf",
+        "sdedge",
+        "sdege",
+        "sdwan",
+        "wanchart",
+        "wanknf"
+    ]
+}
